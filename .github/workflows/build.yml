@@ -1,0 +1,60 @@
+
+name: Build Caddy NaiveProxy
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: "Linux CPU architecture"
+        required: true
+        type: choice
+        default: amd64
+        options:
+          - amd64
+          - arm64
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+
+      - name: Install xcaddy
+        run: |
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+      - name: Build Caddy with forwardproxy
+        env:
+          GOOS: linux
+          GOARCH: ${{ inputs.architecture }}
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          xcaddy build \
+            --with github.com/caddyserver/forwardproxy@caddy2 \
+            --output dist/caddy
+
+      - name: Verify binary
+        run: |
+          file dist/caddy
+          if [ "${{ inputs.architecture }}" = "amd64" ]; then
+            ./dist/caddy version
+            ./dist/caddy list-modules | grep http.handlers.forward_proxy
+          fi
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: caddy-linux-${{ inputs.architecture }}
+          path: dist/caddy
+          retention-days: 7
+          if-no-files-found: error
